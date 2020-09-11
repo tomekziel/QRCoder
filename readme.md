@@ -7,7 +7,7 @@ This is a set of quick and dirty hacks on top of the QRCoder library. It provide
 
 You will find a few semi-working examples in file `ColorsDemo.cs` (it generates images above). Pay attention to the `ColorProviders.cs` and check, where it is plugged in.
 
-Only two modified renderers are `AsciiQRCode.cs` (with new `GetLineByLineSource` method) and `QrCode.cs`, but most of the work is dont in semi-complete changes in `QrCodeGenerator.cs`
+Only two modified renderers are `AsciiQRCode.cs` (with new `GetLineByLineSource` method) and `QrCode.cs`, but most of the work is done in semi-complete changes in `QrCodeGenerator.cs`
 
 
 All the work is licensed under original QrCoder license and so on. Enjoy!
