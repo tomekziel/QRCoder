@@ -9,17 +9,50 @@ namespace QRCoder
     using System.IO;
     using System.IO.Compression;
 
+
+
     public class QRCodeData : IDisposable
     {
-        public List<BitArray> ModuleMatrix { get; set; }
+
+
+        public List<BitArray> ModuleMatrix {
+            get;
+            set;
+        }
+
+        public List<Array> SourceMatrix
+        {
+            get;
+            set;
+        }
+
+        public SourceType[,] sourceType;
+
+        public int DataWordsLen
+        {
+            get;
+            set;
+        }
+
+        public List<Tuple<int,int>> dataPoints
+        {
+            get;
+            set;
+        }
 
         public QRCodeData(int version)
         {
             this.Version = version;
             var size = ModulesPerSideFromVersion(version);
+            sourceType = new SourceType[size, size];
             this.ModuleMatrix = new List<BitArray>();
-            for (var i = 0; i < size; i++)
+            this.SourceMatrix = new List<Array>();
+            for (var i = 0; i < size; i++) { 
                 this.ModuleMatrix.Add(new BitArray(size));
+                this.SourceMatrix.Add(Array.CreateInstance(typeof(SourceType), size));
+            }
+
+
         }
 #if NETFRAMEWORK || NETSTANDARD2_0
         public QRCodeData(string pathToRawData, Compression compressMode) : this(File.ReadAllBytes(pathToRawData), compressMode)

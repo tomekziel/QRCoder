@@ -46,7 +46,7 @@ namespace QRCoder
         /// <returns></returns>
         public string[] GetLineByLineGraphic(int repeatPerModule)
         {
-            return GetLineByLineGraphic(repeatPerModule, "██", "  ");
+            return GetLineByLineGraphic(repeatPerModule, "█", " ");
         }
 
 
@@ -92,6 +92,58 @@ namespace QRCoder
             }
             return qrCode.ToArray();
         }
+
+
+
+        public string[] GetLineByLineSource(int repeatPerModule = 1)
+        {
+            var qrCode = new List<string>();
+            //We need to adjust the repeatPerModule based on number of characters in darkColorString
+            //(we assume whiteSpaceString has the same number of characters)
+            //to keep the QR code as square as possible.
+            var adjustmentValueForNumberOfCharacters = 0;
+            var verticalNumberOfRepeats = repeatPerModule + adjustmentValueForNumberOfCharacters;
+            var sideLength = QrCodeData.ModuleMatrix.Count * verticalNumberOfRepeats;
+            for (var y = 0; y < sideLength; y++)
+            {
+                bool emptyLine = true;
+                var lineBuilder = new StringBuilder();
+
+                for (var x = 0; x < QrCodeData.ModuleMatrix.Count; x++)
+                {
+                    var moduleLine = QrCodeData.SourceMatrix[x];//[(y + verticalNumberOfRepeats) / verticalNumberOfRepeats - 1];
+                    var module = (SourceType)moduleLine.GetValue((y + verticalNumberOfRepeats) / verticalNumberOfRepeats - 1);
+
+                    for (var i = 0; i < repeatPerModule; i++)
+                    {
+                        lineBuilder.Append(sourceTypeToString(module));
+                    }
+                }
+                qrCode.Add(lineBuilder.ToString());
+
+            }
+            return qrCode.ToArray();
+        }
+
+
+        string sourceTypeToString(SourceType s)
+        {
+            switch (s)
+            {
+                case SourceType.NONE: return "?";
+                case SourceType.QUIETPART: return "Q";
+                case SourceType.TIMING: return "T";
+                case SourceType.ALIGN: return "A";
+                case SourceType.FINDER: return "F";
+                case SourceType.DARK: return "D";
+                case SourceType.VERSION: return "V";
+                case SourceType.FORMAT: return "O";
+                case SourceType.DATA: return ".";
+                case SourceType.INVALID: return "!";
+                default: return "~";
+            }
+        }
+
     }
 
     public static class AsciiQRCodeHelper

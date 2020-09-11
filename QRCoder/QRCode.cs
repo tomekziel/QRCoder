@@ -1,7 +1,10 @@
 #if NETFRAMEWORK || NETSTANDARD2_0
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using static QRCoder.QRCodeGenerator;
 
 namespace QRCoder
@@ -57,6 +60,75 @@ namespace QRCoder
 
             return bmp;
         }
+
+
+
+        public Bitmap GetGraphic(int pixelsPerModule, ColorProvider provider, bool drawQuietZones = true, bool drawThinLines = false, bool drawDirections = false)
+        {
+            var size = (this.QrCodeData.ModuleMatrix.Count - (drawQuietZones ? 0 : 8)) * pixelsPerModule;
+            var offset = drawQuietZones ? 0 : 4 * pixelsPerModule;
+
+            var bmp = new Bitmap(size, size);
+
+            using (var gfx = Graphics.FromImage(bmp))
+            {
+                for (var x = 0; x < size + offset; x = x + pixelsPerModule)
+                {
+
+                    for (var y = 0; y < size + offset; y = y + pixelsPerModule)
+                    {
+                        var module = this.QrCodeData.ModuleMatrix[(y + pixelsPerModule) / pixelsPerModule - 1][(x + pixelsPerModule) / pixelsPerModule - 1];
+                        SourceType stype = (SourceType) this.QrCodeData.SourceMatrix[(y + pixelsPerModule) / pixelsPerModule - 1].GetValue((x + pixelsPerModule) / pixelsPerModule - 1);
+
+                        var brush = provider.getBrush(stype, module);
+                        gfx.FillRectangle(brush, new Rectangle(x - offset, y - offset, pixelsPerModule, pixelsPerModule));
+
+                        
+                    }
+                }
+
+                if (drawThinLines)
+                {
+                    for (var x = 0; x < size + offset; x = x + pixelsPerModule)
+                    {
+                        for (var y = 0; y < size + offset; y = y + pixelsPerModule)
+                        {
+                            gfx.DrawLine(Pens.LightGray, x, 0, x, size + offset);
+                            gfx.DrawLine(Pens.LightGray, 0, y, size + offset, y);
+                        }
+                    }
+                    gfx.DrawLine(Pens.LightGray, size -1, 0, size -1, size );
+                    gfx.DrawLine(Pens.LightGray, 0, size -1, size , size -1);
+
+                }
+
+                if (drawDirections)
+                {
+                    for (int i = 1; i < this.QrCodeData.dataPoints.Count; i++)
+                    {
+                        var p1 = QrCodeData.dataPoints[i - 1];
+                        var p2 = QrCodeData.dataPoints[i];
+
+                        gfx.DrawLine(Pens.Black, 
+                            p1.Item1*pixelsPerModule + pixelsPerModule / 2, p1.Item2*pixelsPerModule+ pixelsPerModule/2,
+                            p2.Item1 * pixelsPerModule + pixelsPerModule / 2, p2.Item2 * pixelsPerModule + pixelsPerModule/2
+                            );
+
+                        gfx.FillRectangle(Brushes.Black,
+                            new Rectangle(p1.Item1 * pixelsPerModule + pixelsPerModule / 2 - 1,
+                            p1.Item2 * pixelsPerModule + pixelsPerModule / 2 - 1, 3, 3));
+                        gfx.FillRectangle(Brushes.Black,
+                            new Rectangle(p2.Item1 * pixelsPerModule + pixelsPerModule / 2 - 1,
+                            p2.Item2 * pixelsPerModule + pixelsPerModule / 2 - 1, 3, 3));
+                    }
+                }
+                gfx.Save();
+            }
+
+            return bmp;
+        }
+
+
 
         public Bitmap GetGraphic(int pixelsPerModule, Color darkColor, Color lightColor, Bitmap icon=null, int iconSizePercent=15, int iconBorderWidth = 6, bool drawQuietZones = true)
         {

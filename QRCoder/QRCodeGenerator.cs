@@ -16,7 +16,7 @@ namespace QRCoder
 
         private static readonly List<AlignmentPattern> alignmentPatternTable = CreateAlignmentPatternTable();
         private static readonly List<ECCInfo> capacityECCTable = CreateCapacityECCTable();
-        private static readonly List<VersionInfo> capacityTable = CreateCapacityTable();
+        public static readonly List<VersionInfo> capacityTable = CreateCapacityTable();
         private static readonly List<Antilog> galoisField = CreateAntilogTable();
         private static readonly Dictionary<char, int> alphanumEncDict = CreateAlphanumEncDict();
 
@@ -69,9 +69,17 @@ namespace QRCoder
         /// <param name="requestedVersion">Set fixed QR code target version.</param>
         /// <exception cref="QRCoder.Exceptions.DataTooLongException">Thrown when the payload is too big to be encoded in a QR code.</exception>
         /// <returns>Returns the raw QR code data which can be used for rendering.</returns>
-        public QRCodeData CreateQrCode(string plainText, ECCLevel eccLevel, bool forceUtf8 = false, bool utf8BOM = false, EciMode eciMode = EciMode.Default, int requestedVersion = -1)
+        public QRCodeData CreateQrCode(string plainText, 
+            ECCLevel eccLevel, 
+            bool forceUtf8 = false,
+            bool utf8BOM = false, 
+            EciMode eciMode = EciMode.Default,
+            int requestedVersion = -1, 
+            int forcedpattern = -1000,
+            int maxBits = -1,
+            bool doMasking = false)
         {
-            return GenerateQrCode(plainText, eccLevel, forceUtf8, utf8BOM, eciMode, requestedVersion);
+            return GenerateQrCode(plainText, eccLevel, forceUtf8, utf8BOM, eciMode, requestedVersion, forcedpattern, maxBits, doMasking);
         }
 
         /// <summary>
@@ -121,11 +129,22 @@ namespace QRCoder
         /// <param name="requestedVersion">Set fixed QR code target version.</param>
         /// <exception cref="QRCoder.Exceptions.DataTooLongException">Thrown when the payload is too big to be encoded in a QR code.</exception>
         /// <returns>Returns the raw QR code data which can be used for rendering.</returns>
-        public static QRCodeData GenerateQrCode(string plainText, ECCLevel eccLevel, bool forceUtf8 = false, bool utf8BOM = false, EciMode eciMode = EciMode.Default, int requestedVersion = -1)
+        public static QRCodeData GenerateQrCode(string plainText, 
+            ECCLevel eccLevel, 
+            bool forceUtf8 = false, 
+            bool utf8BOM = false, 
+            EciMode eciMode = EciMode.Default, 
+            int requestedVersion = -1, 
+            int forcedpattern = -1000, 
+            int maxBits = -1,
+            bool doMasking = false)
         {
             EncodingMode encoding = GetEncodingFromPlaintext(plainText, forceUtf8);
             var codedText = PlainTextToBinary(plainText, encoding, eciMode, utf8BOM, forceUtf8);
             var dataInputLength = GetDataLength(encoding, plainText, codedText, forceUtf8);
+
+            //Console.WriteLine(codedText);
+
             int version = requestedVersion;
             if (version == -1)
             {
@@ -143,8 +162,11 @@ namespace QRCoder
             var bitString = modeIndicator + countIndicator;
 
             bitString += codedText;
+            
+            //Console.WriteLine(bitString);
 
-            return GenerateQrCode(bitString, eccLevel, version);
+
+            return GenerateQrCode(bitString, eccLevel, version, forcedpattern, maxBits, doMasking);
         }
 
 
@@ -171,7 +193,7 @@ namespace QRCoder
             return GenerateQrCode(bitString, eccLevel, version);
         }
 
-        private static QRCodeData GenerateQrCode(string bitString, ECCLevel eccLevel, int version)
+        static QRCodeData GenerateQrCode(string bitString, ECCLevel eccLevel, int version, int forcedPattern = -1000, int maxBits = -1, bool doMasking = false)
         {
             //Fill up data code word
             var eccInfo = capacityECCTable.Single(x => x.Version == version && x.ErrorCorrectionLevel == eccLevel);
@@ -253,8 +275,8 @@ namespace QRCoder
             ModulePlacer.PlaceTimingPatterns(ref qr, ref blockedModules);
             ModulePlacer.PlaceDarkModule(ref qr, version, ref blockedModules);
             ModulePlacer.ReserveVersionAreas(qr.ModuleMatrix.Count, version, ref blockedModules);
-            ModulePlacer.PlaceDataWords(ref qr, interleavedData, ref blockedModules);
-            var maskVersion = ModulePlacer.MaskCode(ref qr, version, ref blockedModules, eccLevel);
+            ModulePlacer.PlaceDataWords(ref qr, interleavedData, ref blockedModules, forcedPattern, maxBits, doMasking);
+            var maskVersion = ModulePlacer.MaskCode(ref qr, version, ref blockedModules, eccLevel, forcedPattern, maxBits);
             var formatStr = GetFormatString(eccLevel, maskVersion);
 
             ModulePlacer.PlaceFormat(ref qr, formatStr);
@@ -264,8 +286,9 @@ namespace QRCoder
                 ModulePlacer.PlaceVersion(ref qr, versionString);
             }
 
-
             ModulePlacer.AddQuietZone(ref qr);
+            qr.DataWordsLen = interleavedData.Length;
+
             return qr;
         }
 
@@ -319,12 +342,22 @@ namespace QRCoder
             public static void AddQuietZone(ref QRCodeData qrCode)
             {
                 var quietLine = new bool[qrCode.ModuleMatrix.Count + 8];
-                for (var i = 0; i < quietLine.Length; i++)
+                var quietSource = Array.CreateInstance(typeof(SourceType), quietLine.Length);
+
+                for (var i = 0; i < quietLine.Length; i++) {
                     quietLine[i] = false;
+                    quietSource.SetValue(SourceType.QUIETPART, i);
+                }
                 for (var i = 0; i < 4; i++)
+                {
                     qrCode.ModuleMatrix.Insert(0, new BitArray(quietLine));
+                    qrCode.SourceMatrix.Insert(0, quietSource);
+                }
                 for (var i = 0; i < 4; i++)
+                {
                     qrCode.ModuleMatrix.Add(new BitArray(quietLine));
+                    qrCode.SourceMatrix.Add(quietSource);
+                }
                 for (var i = 4; i < qrCode.ModuleMatrix.Count - 4; i++)
                 {
                     bool[] quietPart = { false, false, false, false };
@@ -332,6 +365,12 @@ namespace QRCoder
                     tmpLine.AddRange(qrCode.ModuleMatrix[i].Cast<bool>());
                     tmpLine.AddRange(quietPart);
                     qrCode.ModuleMatrix[i] = new BitArray(tmpLine.ToArray());
+
+                    SourceType[] qp = { SourceType.QUIETPART, SourceType.QUIETPART, SourceType.QUIETPART, SourceType.QUIETPART };
+                    var tmpQ = new List<SourceType>(qp);
+                    tmpQ.AddRange(qrCode.SourceMatrix[i].Cast<SourceType>());
+                    tmpQ.AddRange(qp);
+                    qrCode.SourceMatrix[i] = tmpQ.ToArray();
                 }
             }
 
@@ -357,7 +396,10 @@ namespace QRCoder
                     for (var y = 0; y < 3; y++)
                     {
                         qrCode.ModuleMatrix[y + size - 11][x] = vStr[x * 3 + y] == '1';
+                        qrCode.SourceMatrix[y + size - 11].SetValue(SourceType.VERSION, x);
+
                         qrCode.ModuleMatrix[x][y + size - 11] = vStr[x * 3 + y] == '1';
+                        qrCode.SourceMatrix[x].SetValue(SourceType.VERSION, y + size - 11);
                     }
                 }
             }
@@ -388,12 +430,28 @@ namespace QRCoder
                     var p2 = new Point(modules[i, 2], modules[i, 3]);
                     qrCode.ModuleMatrix[p1.Y][p1.X] = fStr[i] == '1';
                     qrCode.ModuleMatrix[p2.Y][p2.X] = fStr[i] == '1';
+
+                    qrCode.SourceMatrix[p1.Y].SetValue(SourceType.FORMAT, p1.X);
+                    qrCode.SourceMatrix[p2.Y].SetValue(SourceType.FORMAT, p2.X);
+
                 }
             }
 
 
-            public static int MaskCode(ref QRCodeData qrCode, int version, ref List<Rectangle> blockedModules, ECCLevel eccLevel)
+            public static int MaskCode(ref QRCodeData qrCode, int version, ref List<Rectangle> blockedModules, ECCLevel eccLevel, int forcedPattern = -1000, int maxBits = 0)
             {
+                bool disabledMask = forcedPattern != -1000 && forcedPattern < 0;
+
+                if (forcedPattern != -1000 && forcedPattern != 0 && (forcedPattern < -8 || forcedPattern > 8))
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+
+                if (forcedPattern != -1000)
+                {
+                    forcedPattern = Math.Abs(forcedPattern);
+                }
+
                 int? selectedPattern = null;
                 var patternScore = 0;
 
@@ -442,42 +500,66 @@ namespace QRCoder
                     }
 
                     var score = MaskPattern.Score(ref qrTemp);
-                    if (!selectedPattern.HasValue || patternScore > score)
+
+                    if (forcedPattern != -1000)
                     {
-                        selectedPattern = pattern.Key;
-                        patternScore = score;
+                        selectedPattern = forcedPattern;
+
+                    }
+                    else
+                    {
+                        if (!selectedPattern.HasValue || patternScore > score)
+                        {
+                            selectedPattern = pattern.Key;
+                            patternScore = score;
+                        }
                     }
                 }
 
-                for (var x = 0; x < size; x++)
-                {
-                    for (var y = 0; y < x; y++)
+                if (!disabledMask)
+                { 
+                    for (var x = 0; x < size; x++)
                     {
-                        if (!IsBlocked(new Rectangle(x, y, 1, 1), blockedModules))
+                        for (var y = 0; y < x; y++)
                         {
-                            qrCode.ModuleMatrix[y][x] ^= methods[selectedPattern.Value](x, y);
-                            qrCode.ModuleMatrix[x][y] ^= methods[selectedPattern.Value](y, x);
+                            if (!IsBlocked(new Rectangle(x, y, 1, 1), blockedModules))
+                            {
+                                qrCode.ModuleMatrix[y][x] ^= methods[selectedPattern.Value](x, y);
+                                qrCode.ModuleMatrix[x][y] ^= methods[selectedPattern.Value](y, x);
+                            }
                         }
-                    }
 
-                    if (!IsBlocked(new Rectangle(x, x, 1, 1), blockedModules))
-                    {
-                        qrCode.ModuleMatrix[x][x] ^= methods[selectedPattern.Value](x, x);
+                        if (!IsBlocked(new Rectangle(x, x, 1, 1), blockedModules))
+                        {
+                            qrCode.ModuleMatrix[x][x] ^= methods[selectedPattern.Value](x, x);
+                        }
                     }
                 }
                 return selectedPattern.Value - 1;
             }
 
 
-            public static void PlaceDataWords(ref QRCodeData qrCode, string data, ref List<Rectangle> blockedModules)
+            public static void PlaceDataWords(ref QRCodeData qrCode, string data, ref List<Rectangle> blockedModules, int forcedPattern, int maxBits, bool doMasking = false)
             {
                 var size = qrCode.ModuleMatrix.Count;
                 var up = true;
                 var datawords = new Queue<bool>();
-                for (int i = 0; i< data.Length; i++)
+
+                qrCode.dataPoints = new List<Tuple<int, int>>();
+
+                bool disabledDataWords = forcedPattern != -1000 && forcedPattern < 0;
+
+                int maximum = Math.Min(maxBits, data.Length);
+                if (maxBits < 0)
+                {
+                    maximum = data.Length;
+                }
+
+                for (int i = 0; i< maximum; i++)
                 {
                     datawords.Enqueue(data[i] != '0');
                 }
+
                 for (var x = size - 1; x >= 0; x = x - 2)
                 {
                     if (x == 6)
@@ -488,18 +570,74 @@ namespace QRCoder
                         if (up)
                         {
                             y = size - yMod;
+
                             if (datawords.Count > 0 && !IsBlocked(new Rectangle(x, y, 1, 1), blockedModules))
+                            {
                                 qrCode.ModuleMatrix[y][x] = datawords.Dequeue();
+
+                                if (doMasking)
+                                {
+                                    qrCode.ModuleMatrix[y][x] ^= MaskPattern.Pattern1(x,y);
+                                } else if (disabledDataWords)
+                                {
+                                    qrCode.ModuleMatrix[y][x] = false;
+                                }
+                                qrCode.SourceMatrix[y].SetValue(SourceType.DATA, x);
+                                qrCode.dataPoints.Add(new Tuple<int, int>(x, y));
+
+
+                            }
+
+
                             if (datawords.Count > 0 && x > 0 && !IsBlocked(new Rectangle(x - 1, y, 1, 1), blockedModules))
+                            {
                                 qrCode.ModuleMatrix[y][x - 1] = datawords.Dequeue();
+
+                                if (doMasking)
+                                {
+                                    qrCode.ModuleMatrix[y][x-1] ^= MaskPattern.Pattern1(x-1, y);
+                                } else if (disabledDataWords)
+                                {
+                                    qrCode.ModuleMatrix[y][x-1] = false;
+                                }
+                                qrCode.SourceMatrix[y].SetValue(SourceType.DATA, x - 1);
+                                qrCode.dataPoints.Add(new Tuple<int, int>(x-1, y));
+                            }
                         }
                         else
                         {
                             y = yMod - 1;
+
                             if (datawords.Count > 0 && !IsBlocked(new Rectangle(x, y, 1, 1), blockedModules))
+                            {
                                 qrCode.ModuleMatrix[y][x] = datawords.Dequeue();
+
+                                if (doMasking)
+                                {
+                                    qrCode.ModuleMatrix[y][x] ^= MaskPattern.Pattern1(x, y);
+                                } else if (disabledDataWords)
+                                {
+                                    qrCode.ModuleMatrix[y][x] = false;
+                                }
+                                qrCode.SourceMatrix[y].SetValue(SourceType.DATA, x);
+                                qrCode.dataPoints.Add(new Tuple<int, int>(x, y));
+                            }
+
+
                             if (datawords.Count > 0 && x > 0 && !IsBlocked(new Rectangle(x - 1, y, 1, 1), blockedModules))
+                            {
                                 qrCode.ModuleMatrix[y][x - 1] = datawords.Dequeue();
+
+                                if (doMasking)
+                                {
+                                    qrCode.ModuleMatrix[y][x-1] ^= MaskPattern.Pattern1(x-1, y);
+                                } else if (disabledDataWords)
+                                {
+                                    qrCode.ModuleMatrix[y][x-1] = false;
+                                }
+                                qrCode.SourceMatrix[y].SetValue(SourceType.DATA, x - 1);
+                                qrCode.dataPoints.Add(new Tuple<int, int>(x-1, y));
+                            }
                         }
                     }
                     up = !up;
@@ -540,27 +678,49 @@ namespace QRCoder
             public static void PlaceDarkModule(ref QRCodeData qrCode, int version, ref List<Rectangle> blockedModules)
             {
                 qrCode.ModuleMatrix[4 * version + 9][8] = true;
+                qrCode.SourceMatrix[4 * version + 9].SetValue(SourceType.DARK, 8);
+
                 blockedModules.Add(new Rectangle(8, 4 * version + 9, 1, 1));
             }
 
             public static void PlaceFinderPatterns(ref QRCodeData qrCode, ref List<Rectangle> blockedModules)
             {
                 var size = qrCode.ModuleMatrix.Count;
-                int[] locations = { 0, 0, size - 7, 0, 0, size - 7 };
+                int[] locations = { 0, 0, size - 7, 0, 0, size - 7,0,0 };
 
                 for (var i = 0; i < 6; i = i + 2)
                 {
-                    for (var x = 0; x < 7; x++)
+                    for (var x = 0; x < 8; x++)
                     {
-                        for (var y = 0; y < 7; y++)
+                        for (var y = 0; y < 8; y++)
                         {
-                            if (!(((x == 1 || x == 5) && y > 0 && y < 6) || (x > 0 && x < 6 && (y == 1 || y == 5))))
+                            if (x < 7 && y < 7)
                             {
-                                qrCode.ModuleMatrix[y + locations[i + 1]][x + locations[i]] = true;
+                                if (!(((x == 1 || x == 5) && y > 0 && y < 6) || (x > 0 && x < 6 && (y == 1 || y == 5))))
+                                {
+                                    qrCode.ModuleMatrix[y + locations[i + 1]][x + locations[i]] = true;
+                                }
+                                qrCode.SourceMatrix[y + locations[i + 1]].SetValue(SourceType.FINDER, x + locations[i]);
                             }
+                            else 
+                            {
+                                qrCode.SourceMatrix[y].SetValue(SourceType.SPACING, x);
+                            }
+                            if (y == 0)
+                            {
+                                qrCode.SourceMatrix[size - 8 + y].SetValue(SourceType.SPACING, x);
+                                qrCode.SourceMatrix[7].SetValue(SourceType.SPACING, size - 8 + x);
+                            }
+                            if (x == 0)
+                            {
+                                qrCode.SourceMatrix[y].SetValue(SourceType.SPACING, size - 8 + x);
+                                qrCode.SourceMatrix[size - 8 + y].SetValue(SourceType.SPACING, 7);
+                            }
+
                         }
                     }
                     blockedModules.Add(new Rectangle(locations[i], locations[i + 1], 7, 7));
+                    
                 }
             }
 
@@ -589,6 +749,7 @@ namespace QRCoder
                             {
                                 qrCode.ModuleMatrix[loc.Y + y][loc.X + x] = true;
                             }
+                            qrCode.SourceMatrix[loc.Y + y].SetValue(SourceType.ALIGN, loc.X + x);
                         }
                     }
                     blockedModules.Add(new Rectangle(loc.X, loc.Y, 5, 5));
@@ -604,8 +765,12 @@ namespace QRCoder
                     {
                         qrCode.ModuleMatrix[6][i] = true;
                         qrCode.ModuleMatrix[i][6] = true;
+
                     }
+                    qrCode.SourceMatrix[6].SetValue(SourceType.TIMING, i);
+                    qrCode.SourceMatrix[i].SetValue(SourceType.TIMING, 6);
                 }
+
                 blockedModules.AddRange(new[]{
                     new Rectangle(6, 8, 1, size-16),
                     new Rectangle(8, 6, size-16, 1)
@@ -852,7 +1017,7 @@ namespace QRCoder
             return newPoly;
         }
 
-        private static int GetVersion(int length, EncodingMode encMode, ECCLevel eccLevel)
+        public static int GetVersion(int length, EncodingMode encMode, ECCLevel eccLevel)
         {
 
             var fittingVersions = capacityTable.Where(
@@ -1421,7 +1586,7 @@ namespace QRCoder
             H
         }
 
-        private enum EncodingMode
+        public enum EncodingMode
         {
             Numeric = 1,
             Alphanumeric = 2,
@@ -1481,9 +1646,15 @@ namespace QRCoder
             public int CodewordsInGroup1 { get; }
             public int BlocksInGroup2 { get; }
             public int CodewordsInGroup2 { get; }
+
+            public override string ToString()
+            {
+                return "v"+Version+" "+ErrorCorrectionLevel.ToString()+" totaldatacw:"+TotalDataCodewords;
+            }
+
         }
 
-        private struct VersionInfo
+        public struct VersionInfo
         {
             public VersionInfo(int version, List<VersionInfoDetails> versionInfoDetails)
             {
@@ -1494,7 +1665,7 @@ namespace QRCoder
             public List<VersionInfoDetails> Details { get; }
         }
 
-        private struct VersionInfoDetails
+        public struct VersionInfoDetails
         {
             public VersionInfoDetails(ECCLevel errorCorrectionLevel, Dictionary<EncodingMode, int> capacityDict)
             {
