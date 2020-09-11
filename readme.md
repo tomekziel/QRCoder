@@ -1,3 +1,24 @@
+# Warning! This repo does not contain production ready code!
+
+This is a set of quick and dirty hacks on top of the QRCoder library. It provides semi-working coloring system for QR-codes.
+
+
+![colorexample.png](colorexample.png)
+
+You will find a few semi-working examples in file `ColorsDemo.cs` (it generates images above). Pay attention to the `ColorProviders.cs` and check, where it is plugged in.
+
+Only two modified renderers are `AsciiQRCode.cs` (with new `GetLineByLineSource` method) and `QrCode.cs`, but most of the work is dont in semi-complete changes in `QrCodeGenerator.cs`
+
+
+All the work is licensed under original QrCoder license and so on. Enjoy!
+
+Orignal readme below
+
+---------------
+
+
+
+
 # QRCoder
 [![qrcoder MyGet Build Status](https://www.myget.org/BuildSource/Badge/qrcoder?identifier=10cbdaa5-2dd9-460b-b424-be44e75258ec)](https://www.myget.org/feed/qrcoder/package/nuget/QRCoder)   [![NuGet Badge](https://buildstats.info/nuget/QRCoder)](https://www.nuget.org/packages/QRCoder/)
 ## Info 
